@@ -31,11 +31,10 @@ import (
 // This call requires explicit authentication, no anonymous requests are
 // allowed for listing buckets.
 //
-//   api := client.New(....)
-//   for message := range api.ListBuckets(context.Background()) {
-//       fmt.Println(message)
-//   }
-//
+//	api := client.New(....)
+//	for message := range api.ListBuckets(context.Background()) {
+//	    fmt.Println(message)
+//	}
 func (c *Client) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 	// Execute GET on service.
 	resp, err := c.executeMethod(ctx, http.MethodGet, requestMetadata{contentSHA256Hex: emptySHA256Hex})
@@ -93,7 +92,16 @@ func (c *Client) listObjectsV2(ctx context.Context, bucketName string, opts List
 		defer close(objectStatCh)
 		// Save continuationToken for next request.
 		var continuationToken string
+
+		numPackages, iterPackages := 0, 0
+		if opts.NumPackages > 0 {
+			numPackages = opts.NumPackages
+		}
 		for {
+			if numPackages != 0 && iterPackages >= numPackages {
+				break
+			}
+			iterPackages++
 			// Get list of objects a maximum of 1000 per request.
 			result, err := c.listObjectsV2Query(ctx, bucketName, opts.Prefix, continuationToken,
 				fetchOwner, opts.WithMetadata, delimiter, opts.StartAfter, opts.MaxKeys, opts.headers)
@@ -137,6 +145,7 @@ func (c *Client) listObjectsV2(ctx context.Context, bucketName string, opts List
 			if !result.IsTruncated {
 				return
 			}
+
 		}
 	}(objectStatCh)
 	return objectStatCh
@@ -642,6 +651,11 @@ type ListObjectsOptions struct {
 	UseV1 bool
 
 	headers http.Header
+
+	// NumPackages количество "пакетов", которое нужно вернуть в одном ответе
+	// Один пакет - 1000 записей
+	// По дефолту ограничений нет
+	NumPackages int
 }
 
 // Set adds a key value pair to the options. The
@@ -656,11 +670,10 @@ func (o *ListObjectsOptions) Set(key, value string) {
 
 // ListObjects returns objects list after evaluating the passed options.
 //
-//   api := client.New(....)
-//   for object := range api.ListObjects(ctx, "mytestbucket", minio.ListObjectsOptions{Prefix: "starthere", Recursive:true}) {
-//       fmt.Println(object)
-//   }
-//
+//	api := client.New(....)
+//	for object := range api.ListObjects(ctx, "mytestbucket", minio.ListObjectsOptions{Prefix: "starthere", Recursive:true}) {
+//	    fmt.Println(object)
+//	}
 func (c *Client) ListObjects(ctx context.Context, bucketName string, opts ListObjectsOptions) <-chan ObjectInfo {
 	if opts.WithVersions {
 		return c.listObjectVersions(ctx, bucketName, opts)
@@ -691,12 +704,12 @@ func (c *Client) ListObjects(ctx context.Context, bucketName string, opts ListOb
 // If you enable recursive as 'true' this function will return back all
 // the multipart objects in a given bucket name.
 //
-//   api := client.New(....)
-//   // Recurively list all objects in 'mytestbucket'
-//   recursive := true
-//   for message := range api.ListIncompleteUploads(context.Background(), "mytestbucket", "starthere", recursive) {
-//       fmt.Println(message)
-//   }
+//	api := client.New(....)
+//	// Recurively list all objects in 'mytestbucket'
+//	recursive := true
+//	for message := range api.ListIncompleteUploads(context.Background(), "mytestbucket", "starthere", recursive) {
+//	    fmt.Println(message)
+//	}
 func (c *Client) ListIncompleteUploads(ctx context.Context, bucketName, objectPrefix string, recursive bool) <-chan ObjectMultipartInfo {
 	return c.listIncompleteUploads(ctx, bucketName, objectPrefix, recursive)
 }
@@ -914,7 +927,7 @@ func (c *Client) findUploadIDs(ctx context.Context, bucketName, objectName strin
 }
 
 // listObjectPartsQuery (List Parts query)
-//     - lists some or all (up to 1000) parts that have been uploaded
+//   - lists some or all (up to 1000) parts that have been uploaded
 //     for a specific multipart upload
 //
 // You can use the request parameters as selection criteria to return
